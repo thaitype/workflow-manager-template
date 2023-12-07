@@ -1,0 +1,28 @@
+{
+    "compilerOptions": {
+      /* Base Options: */
+      "esModuleInterop": true,
+      "skipLibCheck": true,
+      "target": "es2022",
+    //   "verbatimModuleSyntax": true,
+      "allowJs": true,
+      "resolveJsonModule": true,
+    //   "moduleDetection": "force",
+      /* Strictness */
+      "strict": true,
+      "noUncheckedIndexedAccess": true,
+      /* If transpiling with TypeScript: */
+      "outDir": "dist",
+      "sourceMap": true,
+      /* If NOT transpiling with TypeScript: */
+      "moduleResolution": "Bundler",
+      "module": "ESNext",
+      "noEmit": true,
+      "lib": ["es2022"],
+      /* If you're building for a library: */
+      "declaration": true,
+      /* If you're building for a library in a monorepo: */
+      "composite": true,
+      "declarationMap": true
+    }
+  }

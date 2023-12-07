@@ -1,0 +1,15 @@
+{
+    "Name": "Storage Account Blob Upload Batch",
+    "IsCustom": true,
+    "Description": "Upload Blob Batch and Read access to a specific storage account only",
+    "Actions": [
+        "Microsoft.Storage/storageAccounts/listKeys/action",
+        "Microsoft.Storage/storageAccounts/read"
+    ],
+    "NotActions": [],
+    "DataActions": [],
+    "NotDataActions": [],
+    "AssignableScopes": [
+        "/subscriptions/1defc8d9-e339-4e66-958f-9676ca8960fa"
+    ]
+}

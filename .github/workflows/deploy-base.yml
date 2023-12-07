@@ -1,0 +1,1282 @@
+name: 'Base: Deploy Workflows'
+
+# Using Workflow Call to reuse the same workflow for different environments
+# Blog: https://github.blog/2022-02-10-using-reusable-workflows-github-actions/
+# Doc: https://docs.github.com/en/actions/using-workflows/reusing-workflows
+
+on:
+  workflow_call:
+    inputs:
+      deploy_branch:
+        description: 'Target `web` Branch'
+        required: true
+        type: string
+      image_tag:
+        description: 'Image Tag (e.g. Version)'
+        type: string
+        default: latest
+      skip_build_image_container:
+        type: boolean
+        description: 'Skip Build Image Container'
+        default: false
+      matrix:
+        description: 'Custom Deploy Jobs (Type: IJobsConfig)'
+        type: string
+        required: false
+      is_plan_mode:
+        type: boolean
+        description: Plan Mode
+        default: false
+      workflow_environment:
+        description: 'Select Workflow Environment, support `atom`, `dev`, `uat`, `prod`'
+        type: string
+        required: true
+      environment_specifier:
+        description: 'Environment Specifier, e.g. Atom ID.'
+        type: string
+        required: true
+      enable_utility_aaa:
+        description: 'Enable Utility AAA'
+        type: boolean
+        default: true
+      enable_utility_ccc:
+        description: 'Enable Utility CCC'
+        type: boolean
+        default: true
+      enable_utility_bbb:
+        description: 'Enable Utility NG'
+        type: boolean
+        default: true
+      enable_job_react:
+        description: 'Enable Job React'
+        type: boolean
+        default: true
+      enable_job_bff:
+        description: 'Enable Job BFF'
+        type: boolean
+        default: true
+      enable_job_facing:
+        description: 'Enable Job Facing'
+        type: boolean
+        default: true
+      enable_job_realtime_msg_center:
+        description: 'Enable Job Realtime Message Center'
+        type: boolean
+        default: true
+      enable_job_tunnel:
+        description: 'Enable Job Tunnel'
+        type: boolean
+        default: true
+      enable_job_web:
+        description: 'Enable Job Web'
+        type: boolean
+        default: true
+      enable_job_api:
+        description: 'Enable Job API'
+        type: boolean
+        default: true
+      enable_job_mobile_api:
+        description: 'Enable Job Mobile API'
+        type: boolean
+        default: true
+      enable_job_identityserver:
+        description: 'Enable Job Identity Server'
+        type: boolean
+        default: true
+      enable_job_auth_gateway:
+        description: 'Enable Job Auth Gateway'
+        type: boolean
+        default: true
+      enable_job_service_discovery:
+        description: 'Enable Job Service Discovery'
+        type: boolean
+        default: true
+      enable_job_background_job:
+        description: 'Enable Job Background Job'
+        type: boolean
+        default: true
+      enable_job_db_migration:
+        description: 'Enable Job DB Migration'
+        type: boolean
+        default: true
+      container_registry_server:
+        description: 'Container Registry Server'
+        type: string
+        required: true
+      container_registry_username:
+        description: 'Container Registry Username'
+        type: string
+        required: true
+      container_registry_password_name:
+        description: 'Container Registry Password Name'
+        type: string
+        required: true
+
+env:
+  # Workflow Manager
+  workflow_manager_repository: thaitype/workflow-manager-template
+  workflow_manager_ref: v1
+  workflow_manager_node_version: 18
+
+  # Load Matrix from JSON
+  config_dir: .
+  config_json_script: ./src/configs/deploy-${{ inputs.workflow_environment }}/index.ts
+  config_connection_string_script: ./src/scripts/generate-connection-string.ts
+  config_tenant_config_script: ./src/scripts/generate-tenant-config.ts
+  config_tenant_file: tenant.atom.json
+
+  repository: thaitype/workflow-manager-demo-projects
+
+  container_registry_server: ${{ inputs.container_registry_server }}
+  container_registry_username: ${{ inputs.container_registry_username }}
+  container_app_revision_suffix: gh-actions-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # gactuil is located in the remote server
+  gacutil_exec_path: C:\Program Files (x86)\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8 Tools\gacutil.exe
+
+  # Job: DB Migration
+  db_migration_dotnet_version: '6.0.x'
+  # Job: Web
+  web_artifact_name: web
+  web_published_path: \published-web
+
+  # Job: API
+  api_artifact_name: wmgr-api
+  # For Linux Server
+  # build on linux, no root path
+  # api_published_path: /home/runner/published-api
+  api_published_path: \published-api
+  api_dotnet_version: '6.0'
+
+  # Job: Mobile API
+  mobile_api_artifact_name: wmgr-mobile-api
+  mobile_api_published_path: \published-mobile-api
+
+  # Job: Identity Server
+  identity_server_artifact_name: wmgr-identity-server
+  identity_server_published_path: \published-identity-server
+  identity_server_dotnet_version: '3.1'
+
+  # Job: Auth Gateway
+  # build on linux, no root path
+  auth_gateway_artifact_name: wmgr-auth_gateway
+  auth_gateway_published_path: /home/runner/published-auth_gateway
+  auth_gateway_dotnet_version: '6.0.x'
+
+  # Job: Service Discovery
+  service_discovery_artifact_name: service-discovery
+  service_discovery_dotnet_version: '6.0'
+  service_discovery_project_path: 'WmgrManager.ServiceDiscovery'
+
+  # Job: Background
+  background_dotnet_version: '6.0'
+  background_project_path: 'WmgrManager.Tools.UpdateCrewsheetLodgingAzureFunction'
+  background_artifact_name: func-background
+
+  # BFF Service
+  bff_image_name: 'bff'
+  bff_image_tag: ${{ inputs.image_tag }}
+  bff_image: '$container_registry_server/$bff_image_name:$bff_image_tag'
+  bff_working_directory: '.'
+  bff_dockerfile: './rebirth/frontend/apps/bff/Dockerfile'
+
+  # Facing Service
+  facing_image_name: 'facing'
+  facing_image_tag: ${{ inputs.image_tag }}
+  facing_image: '$container_registry_server/$facing_image_name:$facing_image_tag'
+  facing_working_directory: './rebirth'
+  facing_dockerfile: './src/Wmgr.Facing/Dockerfile'
+
+  # Reatlime Tunnel Messenger Service
+  tunnel_image_name: 'realtime-tunnel-msg'
+  tunnel_image_tag: ${{ inputs.image_tag }}
+  tunnel_image: '$container_registry_server/$tunnel_image_name:$tunnel_image_tag'
+  tunnel_working_directory: './rebirth'
+  tunnel_dockerfile: './src/Wmgr.RealTimeTunnel/Dockerfile'
+
+  # Realtime Messaging Center (Azure Functions)
+  realtime_msg_center_dotnet_version: '7.0'
+  realtime_msg_center_project_path: './rebirth/src/Wmgr.RealTimeUpdate'
+  realtime_msg_center_project_artifact: realtime_msg_center
+
+  # React Module
+  react_storage_account_file: twmrdatadevmtcommonfile
+  react_dist_filename: react-dist
+
+jobs:
+  get-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      deployment-matrix: ${{ steps.export-deployment-matrix.outputs.deployment-matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.workflow_manager_repository }}
+          ref: ${{ env.workflow_manager_ref }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.workflow_manager_node_version }}
+          cache: 'yarn'
+          cache-dependency-path: './yarn.lock'
+      - name: Export deployment matrix
+        id: export-deployment-matrix
+        run: |
+          MATRIX='${{ inputs.matrix }}'
+          if [[ "$MATRIX" == "" ]]
+          then
+            echo "::notice title=Get Matrix::Use Matrix from JSON files"
+            yarn --frozen-lockfile --prod
+            yarn set-output ${{ env.config_json_script }} deployment-matrix
+          else
+            echo "::notice title=Get Matrix::Use Custom matrix from input"
+            echo "deployment-matrix=$MATRIX" >> $GITHUB_OUTPUT
+          fi
+        working-directory: ${{ env.config_dir }}
+        env:
+          WORKFLOW_ENV: production
+          ENVIRONMENT_SPECIFIER: ${{ inputs.environment_specifier }}
+          ENABLE_UTILITY_AAA: ${{ inputs.enable_utility_aaa }}
+          ENABLE_UTILITY_CCC: ${{ inputs.enable_utility_ccc }}
+          ENABLE_UTILITY_BBB: ${{ inputs.enable_utility_bbb }}
+          ENABLE_JOB_REACT: ${{ inputs.enable_job_react }}
+          ENABLE_JOB_BFF: ${{ inputs.enable_job_bff }}
+          ENABLE_JOB_FACING: ${{ inputs.enable_job_facing }}
+          ENABLE_JOB_REALTIME_MSG_CENTER: ${{ inputs.enable_job_realtime_msg_center }}
+          ENABLE_JOB_TUNNEL: ${{ inputs.enable_job_tunnel }}
+          ENABLE_JOB_WEB: ${{ inputs.enable_job_web }}
+          ENABLE_JOB_API: ${{ inputs.enable_job_api }}
+          ENABLE_JOB_MOBILE_API: ${{ inputs.enable_job_mobile_api }}
+          ENABLE_JOB_IDENTITYSERVER: ${{ inputs.enable_job_identityserver }}
+          ENABLE_JOB_AUTH_GATEWAY: ${{ inputs.enable_job_auth_gateway }}
+          ENABLE_JOB_SERVICE_DISCOVERY: ${{ inputs.enable_job_service_discovery }}
+          ENABLE_JOB_BACKGROUND_JOB: ${{ inputs.enable_job_background_job }}
+          ENABLE_JOB_DB_MIGRATION: ${{ inputs.enable_job_db_migration }}
+
+      - name: Show current config
+        run: |
+          echo ${{ steps.export-deployment-matrix.outputs.deployment-matrix }}
+
+      - name: Exit if plan mode enabled
+        run: |
+          PLAN_MODE="${{ inputs.is_plan_mode }}"
+          if [[ "$PLAN_MODE" == "true" ]]
+          then
+            echo "::notice title=Get Matrix::Exit with plan Mode"
+            exit 1
+          fi
+
+  run-db-migration:
+    if: inputs.enable_job_db_migration == true
+    needs: [get-matrix]
+    runs-on: ubuntu-latest-8-cores
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).db_migration }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.workflow_manager_repository }}
+          ref: ${{ env.workflow_manager_ref }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./Wmgr-workflow-manager
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.workflow_manager_node_version }}
+          cache: 'yarn'
+          cache-dependency-path: './Wmgr-workflow-manager/yarn.lock'
+
+      - name: Get Connection String
+        id: get-connection-string
+        if: matrix.credential.type == 'github_secret'
+        run: |
+          yarn --frozen-lockfile --prod
+          yarn tsx ${{ env.config_connection_string_script }} "${{ matrix.server }}" "${{ matrix.name }}" "${{ secrets[matrix.credential.gh_secret_name] }}"
+        working-directory: ./Wmgr-workflow-manager
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-connection-string.outputs.connection-string }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite Run DB Migration
+        uses: ./web-actions/composite/db-migration
+        with:
+          env_name: ${{ matrix.env_name }}
+          connection_string: ${{ steps.switch_secret.outputs.match }}
+          dotnet_version: ${{ env.db_migration_dotnet_version }}
+
+  build-auth-gateway:
+    if: inputs.enable_job_auth_gateway == true
+    needs: get-matrix
+    runs-on: 'ubuntu-20.04'
+    timeout-minutes: 50
+    steps:
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: (Atom ) Checkout Wmgr Workflow Manager inside the codebase
+        if: inputs.workflow_environment == 'atom'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.workflow_manager_repository }}
+          ref: ${{ env.workflow_manager_ref }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./Wmgr-workflow-manager
+
+      - name: (Atom ) Install Node
+        if: inputs.workflow_environment == 'atom'
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.workflow_manager_node_version }}
+          cache: 'yarn'
+          cache-dependency-path: './Wmgr-workflow-manager/yarn.lock'
+
+      - name: (Atom ) Get Tenant Config
+        if: inputs.workflow_environment == 'atom'
+        run: |
+          yarn --frozen-lockfile --prod
+          yarn tsx ${{ env.config_tenant_config_script }} ${{ env.config_tenant_file }}
+        working-directory: ./Wmgr-workflow-manager
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_ATOM_CONNECTION_STRING }}
+          ENVIRONMENT:  ${{ inputs.environment_specifier }}
+          ENABLE_UTILITY_AAA: ${{ inputs.enable_utility_aaa }}
+          ENABLE_UTILITY_CCC: ${{ inputs.enable_utility_ccc }}
+          ENABLE_UTILITY_BBB: ${{ inputs.enable_utility_bbb }}
+
+      - name: (Atom ) Copy Tenant Config
+        if: inputs.workflow_environment == 'atom'
+        run: |
+          cp -f ./Wmgr-workflow-manager/${{ env.config_tenant_file }} WmgrManager.GatewayAuth/tenant
+          cat WmgrManager.GatewayAuth/tenant/${{ env.config_tenant_file }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite build Auth Gateway
+        uses: ./web-actions/composite/build-multi-tenant-auth-gateway
+        with:
+          published_path: ${{ env.auth_gateway_published_path }}
+          artifact_name: ${{ env.auth_gateway_artifact_name }}
+          dotnet_version: ${{ env.auth_gateway_dotnet_version }}
+
+  build-web:
+    if: inputs.enable_job_web == true
+    needs: get-matrix
+    name: Build Web
+    runs-on: 'windows-2022'
+    timeout-minutes: 50
+    steps:
+      - name: Support longpaths
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite Build Web
+        uses: ./web-actions/composite/build-web
+        with:
+          gacutil_exec_path: ${{ env.gacutil_exec_path }}
+          published_web_path: ${{ env.web_published_path }}
+          artifact_web_name: ${{ env.web_artifact_name }}
+
+  build-mobile-api:
+    if: inputs.enable_job_mobile_api== true
+    needs: get-matrix
+    name: Build Mobile API
+    runs-on: 'windows-2022'
+    timeout-minutes: 50
+    steps:
+      - name: Support longpaths
+        run: git config --system core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite Build API
+        uses: ./web-actions/composite/build-api
+        with:
+          gacutil_exec_path: ${{ env.gacutil_exec_path }}
+          published_api_path: ${{ env.mobile_api_published_path }}
+          artifact_api_name: ${{ env.mobile_api_artifact_name }}
+
+  build-api:
+    if: inputs.enable_job_api== true
+    needs: get-matrix
+    name: Build API
+    runs-on: windows-latest-8-cores
+    timeout-minutes: 50
+    steps:
+      - name: Support longpaths
+        run: git config --system core.longpaths true
+        
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite Build API
+        uses: ./web-actions/composite/build-multi-tenant-api
+        with:
+          gacutil_exec_path: ${{ env.gacutil_exec_path }}
+          published_path: ${{ env.api_published_path }}
+          artifact_name: ${{ env.api_artifact_name }}
+          dotnet_version: ${{ env.api_dotnet_version }}
+
+  build-identity-server:
+    if: inputs.enable_job_identityserver == true
+    needs: get-matrix
+    runs-on: 'windows-2022'
+    timeout-minutes: 50
+    steps:
+      - name: Support longpaths
+        run: git config --system core.longpaths true
+        
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects
+          ref: '${{ github.event.inputs.deploy_branch }}'
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v3
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call Composite build ID
+        uses: ./web-actions/composite/build-identity-server
+        with:
+          gacutil_exec_path: ${{ env.gacutil_exec_path }}
+          published_identity_server_path: ${{ env.identity_server_published_path }}
+          artifact_identity_server_name: ${{ env.identity_server_artifact_name }}
+          dotnet_version: ${{ env.identity_server_dotnet_version }}
+
+  build-service-discovery:
+    if: inputs.enable_job_service_discovery == true
+    needs: get-matrix
+    name: Build Service Discovery Func
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Build Azure Function .NET Core and Upload
+        uses: thaitype/actions/github/build-azure-function-dotnet-core@v1.0.0
+        with:
+          artifact-name: ${{ env.service_discovery_artifact_name }}
+          project-path: ${{ env.service_discovery_project_path }}
+          dotnet-version: ${{ env.service_discovery_dotnet_version }}
+
+  build-background-function:
+    if: inputs.enable_job_background_job == true
+    name: Build Background Job
+    needs: get-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Build Azure Function .NET Core and Upload
+        uses: thaitype/actions/github/build-azure-function-dotnet-core@main
+        with:
+          artifact-name: ${{ env.background_artifact_name }}
+          project-path: ${{ env.background_project_path }}
+          dotnet-version: ${{ env.background_dotnet_version }}
+
+  build-and-publish-bff:
+    needs: [get-matrix]
+    runs-on: ubuntu-latest
+    if: inputs.enable_job_bff == true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call composite Build and Publish BFF
+        uses: ./web-actions/composite/build-and-publish-docker-image
+        with:
+          acr_login_server: ${{ env.container_registry_server }}
+          acr_username: ${{ env.container_registry_username }}
+          acr_password: ${{ secrets[inputs.container_registry_password_name] }}
+          image: ${{ env.bff_image }}
+          working_directory: ${{ env.bff_working_directory }}
+          dockerfile: ${{ env.bff_dockerfile }}
+
+  build-and-publish-facing:
+    needs: [get-matrix]
+    runs-on: ubuntu-latest
+    if: inputs.enable_job_facing == true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call composite Build and Publish Facing
+        uses: ./web-actions/composite/build-and-publish-docker-image
+        with:
+          acr_login_server: ${{ env.container_registry_server }}
+          acr_username: ${{ env.container_registry_username }}
+          acr_password: ${{ secrets[inputs.container_registry_password_name] }}
+          image: ${{ env.facing_image }}
+          working_directory: ${{ env.facing_working_directory }}
+          dockerfile: ${{ env.facing_dockerfile }}
+
+  build-and-publish-tunnel:
+    needs: [get-matrix]
+    runs-on: ubuntu-latest
+    if: inputs.enable_job_tunnel == true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ env.repository }}
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call composite Build and Publish Facing
+        uses: ./web-actions/composite/build-and-publish-docker-image
+        with:
+          acr_login_server: ${{ env.container_registry_server }}
+          acr_username: ${{ env.container_registry_username }}
+          acr_password: ${{ secrets[inputs.container_registry_password_name] }}
+          image: ${{ env.tunnel_image }}
+          working_directory: ${{ env.tunnel_working_directory }}
+          dockerfile: ${{ env.tunnel_dockerfile }}
+
+  build-react:
+    needs: [get-matrix]
+    name: 'Build React'
+    runs-on: ubuntu-latest
+    if: inputs.enable_job_react == true
+    steps:
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - name: Call composite Build Wmgr Web React
+        uses: ./web-actions/composite/build-react
+        with:
+          react_dist_filename: ${{ env.react_dist_filename }}
+
+  build-realtime-msg-center:
+    needs: [get-matrix]
+    runs-on: ubuntu-latest
+    if: inputs.enable_job_realtime_msg_center == true
+    steps:
+      - name: Checkout Wmgr Web Codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects
+          ref: ${{ inputs.deploy_branch }}
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+
+      - name: Build Azure Function .NET Core and Upload
+        uses: thaitype/actions/github/build-azure-function-dotnet-core@v1
+        with:
+          artifact-name: ${{ env.realtime_msg_center_project_artifact }}
+          project-path: ${{ env.realtime_msg_center_project_path }}
+          dotnet-version: ${{ env.realtime_msg_center_dotnet_version }}
+
+  #
+  # Deploy Jobs
+  #
+
+  deploy-web:
+    needs: [build-web, get-matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).web }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.web_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-mobile-api:
+    needs: [build-mobile-api, get-matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).mobile_api }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.mobile_api_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-api:
+    needs: [build-api, get-matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).api }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.api_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-identity-server:
+    needs: [build-identity-server, get-matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).identityserver }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.identity_server_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-auth-gateway:
+    needs: [build-auth-gateway, get-matrix]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).auth_gateway }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.auth_gateway_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-service-discovery:
+    needs: [build-service-discovery, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).service_discovery }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.service_discovery_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-background-function:
+    needs: [build-background-function, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).background_job }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.background_artifact_name }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .
+          slot-name: ${{ matrix.slot_name }}
+
+  deploy-bff:
+    needs: [build-and-publish-bff, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).bff }}
+
+    steps:
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ secrets[matrix.credential.gh_secret_name] }}
+
+      - name: Call composite Deploy BFF
+        uses: ./web-actions/composite/deploy-azure-container-app
+        with:
+          azure_credential: ${{ steps.switch_secret.outputs.match }}
+          resource_group: ${{ matrix.resource_group }}
+          name: ${{ matrix.name }}
+          image: ${{ env.bff_image }}
+          revision_suffix: ${{ env.container_app_revision_suffix }}
+
+  deploy-facing:
+    needs: [build-and-publish-facing, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).facing }}
+    steps:
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ secrets[matrix.credential.gh_secret_name] }}
+
+      - name: Call composite Deploy Facing
+        uses: ./web-actions/composite/deploy-azure-container-app
+        with:
+          azure_credential: ${{ steps.switch_secret.outputs.match }}
+          resource_group: ${{ matrix.resource_group }}
+          name: ${{ matrix.name }}
+          image: ${{ env.facing_image }}
+          revision_suffix: ${{ env.container_app_revision_suffix }}
+
+  deploy-tunnel:
+    needs: [build-and-publish-tunnel, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).tunnel }}
+    steps:
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ secrets[matrix.credential.gh_secret_name] }}
+
+      - name: Call composite Deploy Facing
+        uses: ./web-actions/composite/deploy-azure-container-app
+        with:
+          azure_credential: ${{ steps.switch_secret.outputs.match }}
+          resource_group: ${{ matrix.resource_group }}
+          name: ${{ matrix.name }}
+          image: ${{ env.tunnel_image }}
+          revision_suffix: ${{ env.container_app_revision_suffix }}
+
+  deploy-react:
+    name: 'Deploy React'
+    runs-on: ubuntu-latest
+    needs: [build-react, get-matrix]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).react }}
+
+    steps:
+      - name: Checkout Wmgr Web Actions (Tools) inside the codebase
+        uses: actions/checkout@v4
+        with:
+          repository: thaitype/workflow-manager-demo-projects-actions
+          ref: v2
+          token: ${{ secrets.MY_THAITYPE_PERSONAL_ACCESS_TOKEN }}
+          path: ./web-actions
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ secrets[matrix.credential.gh_secret_name] }}
+
+      - name: Call composite Upload Wmgr Web React
+        uses: ./web-actions/composite/upload-react
+        with:
+          react_dist_filename: ${{ env.react_dist_filename }}
+          azure_credential: ${{ steps.switch_secret.outputs.match }}
+          storage_account_name: ${{ matrix.storage_account_name }}
+          env_name: ${{ inputs.environment_specifier }}
+
+  deploy-realtime-msg-center:
+    needs: [build-realtime-msg-center, get-matrix]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.get-matrix.outputs.deployment-matrix).realtime_msg_center }}
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ env.realtime_msg_center_project_artifact }}
+
+      - name: Get Publish Profile
+        id: get-publish-profile
+        if: matrix.credential.type == 'github_secret'
+        uses: mildronize/actions-az-cli/webapp/deployment/list-publishing-profiles@v1
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          name: ${{ matrix.name }}
+          slot: ${{ matrix.slot_name }}
+          resource_group: ${{ matrix.resource_group }}
+
+      - uses: mildronize/actions-az-cli/keyvault/secret/show@v1
+        id: get_secret_from_vault
+        if: matrix.credential.type == 'key_vault'
+        with:
+          azure_credentials: ${{ secrets[matrix.credential.gh_secret_name] }}
+          vault_name: ${{ matrix.credential.vault_name }}
+          secret_name: ${{ matrix.credential.secret_name }}
+
+      - name: Switch Secret
+        uses: thaitype/actions-switch-case@v1
+        id: switch_secret
+        with:
+          default: 'Something Wrong!'
+          conditionals-with-values: |
+            ${{ matrix.credential.type == 'key_vault' }} => ${{ steps.get_secret_from_vault.outputs.secret }}
+            ${{ matrix.credential.type == 'github_secret' }} => ${{ steps.get-publish-profile.outputs.publish_profile }}
+
+      - name: Deploy to Azure Web App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ matrix.name }}
+          publish-profile: ${{ steps.switch_secret.outputs.match }}
+          package: .

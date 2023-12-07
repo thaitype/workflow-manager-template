@@ -1,0 +1,15 @@
+{
+  "Name": "Container App Update",
+  "IsCustom": true,
+  "Description": "View and update container apps, but not delete them.",
+  "Actions": [
+    "Microsoft.App/containerApps/write",
+    "Microsoft.App/containerApps/read"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/subscriptions/1defc8d9-e339-4e66-958f-9676ca8960fa"
+  ]
+}
